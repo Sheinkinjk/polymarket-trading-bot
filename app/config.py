@@ -1,6 +1,13 @@
 """
 Central configuration for the Polymarket Trading Bot.
 
+Secrets are read in priority order:
+  1. Environment variables  (local dev, Railway, Docker)
+  2. Streamlit secrets      (Streamlit Community Cloud)
+
+Set secrets in the Streamlit Cloud dashboard under
+  App Settings → Secrets  (TOML format, see secrets.toml.example)
+
 Environment variable reference
 ────────────────────────────────────────────────────────────────────────────────
 General
@@ -22,10 +29,27 @@ Fee / slippage tuning
 import os
 
 
-# ── Core toggles ─────────────────────────────────────────────────────────────
+# ── Secret resolver ───────────────────────────────────────────────────────────
 
-def _bool_env(name: str, default: bool) -> bool:
-    val = os.getenv(name, "").strip().lower()
+def _secret(key: str, default: str = "") -> str:
+    """
+    Read a secret from env vars first, then Streamlit secrets.
+    Safe to call at import time — Streamlit import failure is caught silently.
+    """
+    val = os.getenv(key, "").strip()
+    if val:
+        return val
+    # Fallback: Streamlit Community Cloud injects secrets via st.secrets
+    try:
+        import streamlit as st  # noqa: PLC0415
+        v = st.secrets.get(key, "")
+        return str(v).strip() if v else default
+    except Exception:
+        return default
+
+
+def _bool_secret(key: str, default: bool) -> bool:
+    val = _secret(key, "").lower()
     if val in ("true", "1", "yes"):
         return True
     if val in ("false", "0", "no"):
@@ -33,13 +57,15 @@ def _bool_env(name: str, default: bool) -> bool:
     return default
 
 
+# ── Core toggles ─────────────────────────────────────────────────────────────
+
 # True  → fetch live data (falls back to sample on error, unless PRODUCTION_MODE)
 # False → always use built-in sample data
-USE_REAL_DATA: bool = _bool_env("USE_REAL_DATA", True)
+USE_REAL_DATA: bool = _bool_secret("USE_REAL_DATA", True)
 
 # When True, any API failure raises RuntimeError instead of silently falling
 # back to sample data.  Set this before going live.
-PRODUCTION_MODE: bool = _bool_env("PRODUCTION_MODE", False)
+PRODUCTION_MODE: bool = _bool_secret("PRODUCTION_MODE", False)
 
 
 # ── API endpoints ─────────────────────────────────────────────────────────────
@@ -59,15 +85,15 @@ LOG_SKIPPED_MARKETS = True
 
 # Percentage of gross winnings deducted as taker fee.
 # Default 2.0 is a conservative estimate — verify actual rate before going live.
-TAKER_FEE_PCT: float = float(os.getenv("TAKER_FEE_PCT", "2.0"))
+TAKER_FEE_PCT: float = float(_secret("TAKER_FEE_PCT", "2.0"))
 
 
 # ── Live-trading credentials ──────────────────────────────────────────────────
-# Read from environment — never hard-code values here.
+# Read from environment or Streamlit secrets — never hard-code values here.
 
-POLY_PRIVATE_KEY    = os.getenv("POLY_PRIVATE_KEY",    "")
-POLY_API_KEY        = os.getenv("POLY_API_KEY",        "")
-POLY_API_SECRET     = os.getenv("POLY_API_SECRET",     "")
-POLY_API_PASSPHRASE = os.getenv("POLY_API_PASSPHRASE", "")
+POLY_PRIVATE_KEY    = _secret("POLY_PRIVATE_KEY")
+POLY_API_KEY        = _secret("POLY_API_KEY")
+POLY_API_SECRET     = _secret("POLY_API_SECRET")
+POLY_API_PASSPHRASE = _secret("POLY_API_PASSPHRASE")
 
 POLY_CHAIN_ID = 137   # Polygon mainnet

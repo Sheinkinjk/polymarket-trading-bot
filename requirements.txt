@@ -5,3 +5,4 @@ rich==13.7.1
 python-dotenv==1.0.0
 pandas==2.2.3
 plotly==5.22.0
+py-clob-client>=0.34.0
